@@ -10,7 +10,7 @@
 
 #include "resource.h"		// main symbols
 
-using CDiskSet = std::set< wchar_t >;
+using CDiskSet = std::set< std::wstring >;
 
 // CSageEjectApp:
 // See SageEject.cpp for the implementation of this class
@@ -27,7 +27,9 @@ public:
 	{
 	public:
 		CCmd() noexcept
-			: Help( false )
+			: Help	( false )
+			, CDROM	( false )
+			, Auto	( false )
 		{
 		}
 
@@ -37,19 +39,29 @@ public:
 
 			if ( bFlag )
 			{
-				if ( pszParam[ 0 ] ==_T('?') )
+				if ( _tcsicmp( pszParam, _T("?") ) == 0 || _tcsicmp( pszParam, _T("help") ) == 0 )
 				{
 					Help = true;
 				}
+				else if ( _tcsicmp( pszParam, _T("cdrom") ) == 0 )
+				{
+					CDROM = true;
+				}
+				else if ( _tcsicmp( pszParam, _T("auto") ) == 0 )
+				{
+					Auto = true;
+				}
 			}
-			else if ( pszParam[ 0 ] ==_T('*') || ( _istalpha( pszParam[ 0 ] ) && pszParam[ 1 ] == _T(':') ) )
+			else
 			{
-				ToEject.emplace( pszParam[ 0 ] );
+				ToEject.emplace( pszParam );
 			}
 		}
 
-		bool		Help;
-		CDiskSet	ToEject;
+		bool		Help;		// Need help information
+		bool		CDROM;		// Include CD-ROM
+		bool		Auto;		// Auto-exit if no ejection needed
+		CDiskSet	ToEject;	// Devices to be ejected
 	};
 
 	CCmd CommandLine;

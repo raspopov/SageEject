@@ -23,7 +23,7 @@ along with this program.If not, see < http://www.gnu.org/licenses/>.
 #include "Volume.h"
 
 using CDeviceSet = std::vector< VolumeDeviceClass::Ptr >;
-using CTaskSet = std::set< size_t >;
+using CTaskSet = std::list< size_t >;
 
 // CSageEjectDlg dialog
 
@@ -58,6 +58,7 @@ protected:
 
 	bool Enumerate(const CDiskSet& to_eject = CDiskSet());
 	void Eject(size_t index);
+	void StopServices();
 
 	void DoDataExchange(CDataExchange* pDX) override;	// DDX/DDV support
 	BOOL OnInitDialog() override;

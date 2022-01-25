@@ -151,16 +151,17 @@ public:
 
 			// Unlocking media
 			PREVENT_MEDIA_REMOVAL rem = { FALSE };
-			if ( ! DeviceIoControl( drive, IOCTL_STORAGE_MEDIA_REMOVAL, &rem, sizeof( rem ), nullptr, 0, nullptr, nullptr ) )
+			DWORD returned = 0;
+			if ( ! DeviceIoControl( drive, IOCTL_STORAGE_MEDIA_REMOVAL, &rem, sizeof( rem ), nullptr, 0, &returned, nullptr ) )
 			{
 				TRACE( _T("IOCTL_STORAGE_MEDIA_REMOVAL error: %d\n"), GetLastError() );
 			}
 
 			// Unlocking ejection
-			// DeviceIoControl( drive, IOCTL_STORAGE_EJECTION_CONTROL, &rem, sizeof( rem ), nullptr, 0, nullptr, nullptr );
+			// DeviceIoControl( drive, IOCTL_STORAGE_EJECTION_CONTROL, &rem, sizeof( rem ), nullptr, 0, &returned, nullptr );
 
 			// Locking volume
-			// DeviceIoControl( drive, FSCTL_LOCK_VOLUME, nullptr, 0, nullptr, 0, nullptr, nullptr );
+			// DeviceIoControl( drive, FSCTL_LOCK_VOLUME, nullptr, 0, nullptr, 0, &returned, nullptr );
 
 			CloseHandle( drive );
 		}
@@ -168,11 +169,6 @@ public:
 		{
 			TRACE( _T("CreateFile( %s ) error: %d\n"), full_name.c_str(), GetLastError() );
 		}
-	}
-
-	bool IsEjectable() const noexcept
-	{
-		return ( m_LogicalType == DRIVE_REMOVABLE || m_LogicalType == DRIVE_CDROM );
 	}
 
 	bool Eject() const override
@@ -192,7 +188,8 @@ public:
 			if ( drive != INVALID_HANDLE_VALUE )
 			{
 				// Ejecting media
-				if ( ! DeviceIoControl( drive, IOCTL_DISK_EJECT_MEDIA, nullptr, 0, nullptr, 0, nullptr, nullptr ) )
+				DWORD returned = 0;
+				if ( ! DeviceIoControl( drive, IOCTL_DISK_EJECT_MEDIA, nullptr, 0, nullptr, 0, &returned, nullptr ) )
 				{
 					TRACE( _T("IOCTL_DISK_EJECT_MEDIA( %s ) error: %d\n"), full_name.c_str(), GetLastError() );
 					res = false;

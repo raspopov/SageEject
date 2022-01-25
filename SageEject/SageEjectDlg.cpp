@@ -57,6 +57,32 @@ void CSageEjectDlg::DoDataExchange(CDataExchange* pDX)
 	DDX_Control(pDX, IDOK, m_wndEject);
 }
 
+struct device_sorter : std::binary_function< VolumeDeviceClass::Ptr, VolumeDeviceClass::Ptr, bool >
+{
+	inline bool operator()(const VolumeDeviceClass::Ptr& Left, const VolumeDeviceClass::Ptr& Right) const noexcept
+	{
+		const DWORD ltype = ( Left->LogicalType()  == DRIVE_UNKNOWN ) ? DRIVE_FIXED : Left->LogicalType();
+		const DWORD rtype = ( Right->LogicalType() == DRIVE_UNKNOWN ) ? DRIVE_FIXED : Right->LogicalType();
+		return ( ( ltype <  rtype ) || ( ( ltype  == rtype ) && ( ( Left->DeviceNumber() < Right->DeviceNumber() ) ||
+			( ( Left->DeviceNumber() == Right->DeviceNumber() ) && ( Left->PartitionNumber() < Right->PartitionNumber() ) ) ) ) );
+	}
+};
+
+struct device_is : std::binary_function< VolumeDeviceClass::Ptr, std::wstring, bool >
+{
+	inline bool operator()(const VolumeDeviceClass::Ptr& Left, const std::wstring& Right) const noexcept
+	{
+		// * - matches any removable device or CD-ROM only if enabled by /CDROM option
+		return ( Right == L"*" && ( Left->LogicalType() == DRIVE_REMOVABLE || ( theApp.CommandLine.CDROM && Left->LogicalType() == DRIVE_CDROM ) ) ) ||
+			// matches by logical name
+			( _tcsnicmp( Left->LogicalName().c_str(), Right.c_str(), Right.size() ) == 0 ) ||
+			// matches by DOS name
+			( _tcsnicmp( Left->LogicalDosName().c_str(), Right.c_str(), Right.size() ) == 0 ) ||
+			// matches by volume name
+			( _tcsnicmp( Left->VolumeName().c_str(), Right.c_str(), Right.size() ) == 0 );
+	}
+};
+
 bool CSageEjectDlg::Enumerate(const CDiskSet& to_eject)
 {
 	TRACE( _T("Enumerating devices...\n") );
@@ -64,71 +90,83 @@ bool CSageEjectDlg::Enumerate(const CDiskSet& to_eject)
 	CWaitCursor wc;
 
 	m_EjectTask.clear();
-
-	m_Devices.clear();
 	m_wndDevices.ResetContent();
 
-	const bool any = ( to_eject.find( L'*' ) != to_eject.end() );
+	m_Devices = VolumeDeviceClass::Create()->Devices();
 
-	int index = CB_ERR;
-	if ( auto volume_class = VolumeDeviceClass::Create() )
+	std::sort( m_Devices.begin(), m_Devices.end(), device_sorter() );
+
+	// Output to interface
+	int to_eject_index = CB_ERR, removable_index = CB_ERR;
+	int disk = 0;
+	for ( const auto& device : m_Devices )
 	{
-		for ( const auto& device : volume_class->Devices() )
+		CString name = device->Description().c_str();
+		if ( ! device->LogicalName().empty() )
 		{
-			m_Devices.emplace_back( device );
-			const int disk = static_cast< int >( m_Devices.size() ) - 1;
+			name += L" ";
+			name += device->LogicalName().c_str();
+		}
+		if ( ! device->LogicalTitle().empty() )
+		{
+			name += L" \"";
+			name += device->LogicalTitle().c_str();
+			name += L"\"";
+		}
+		if ( ! device->LogicalFS().empty() )
+		{
+			name += L" [";
+			name += device->LogicalFS().c_str();
+			name += L"]";
+		}
+		if ( device->DeviceNumber() != (UINT)-1 && device->PartitionNumber() != (UINT)-1 )
+		{
+			name.AppendFormat( IDS_DEVICE_NUMBER, device->DeviceNumber(), device->PartitionNumber() );
+		}
 
-			CString name = device->Description().c_str();
-			if ( ! device->LogicalName().empty() )
-			{
-				name += L" ";
-				name += device->LogicalName().c_str();
-			}
-			if ( ! device->LogicalTitle().empty() )
-			{
-				name += L" \"";
-				name += device->LogicalTitle().c_str();
-				name += L"\"";
-			}
-			if ( ! device->LogicalFS().empty() )
-			{
-				name += L" [";
-				name += device->LogicalFS().c_str();
-				name += L"]";
-			}
-			if ( device->DeviceNumber() != (UINT)-1 && device->PartitionNumber() != (UINT)-1 )
-			{
-				name.AppendFormat( IDS_DEVICE_NUMBER, device->DeviceNumber(), device->PartitionNumber() );
-			}
-			m_wndDevices.SetItemData( m_wndDevices.AddString( name ), disk );
+		TRACE( _T("Device #%d: [%d] %s\n"), disk, device->LogicalType(), (LPCTSTR)name );
+		m_wndDevices.SetItemData( m_wndDevices.AddString( name ), disk );
 
-			const bool removable = device->IsEjectable();
+		const bool removable = ( device->LogicalType() == DRIVE_REMOVABLE ) || ( device->LogicalType() == DRIVE_CDROM );
 
-			if ( removable || ! to_eject.empty() )
+		// Take first removable device
+		if ( removable )
+		{
+			if ( removable_index == CB_ERR )
 			{
-				if ( removable && index == CB_ERR )
-				{
-					index = disk;
-				}
-
-				if ( any || ( to_eject.find( device->LogicalName().c_str()[ 0 ] ) != to_eject.end() ) )
-				{
-					if ( removable )
-					{
-						m_EjectTask.emplace( disk );
-					}
-
-					index = disk;
-				}
+				removable_index = disk;
 			}
 		}
+
+		// Take first device to be ejected
+		if ( std::find_if( to_eject.begin(), to_eject.end(), std::bind1st( device_is(), device ) ) != to_eject.end() )
+		{
+			if ( to_eject_index == CB_ERR )
+			{
+				to_eject_index = disk;
+			}
+
+			// Eject removable devices only
+			if ( removable )
+			{
+				m_EjectTask.emplace_back( disk );
+			}
+		}
+
+		++ disk;
 	}
 
-	m_wndDevices.SetCurSel( index );
+	// The best selection
+	if ( to_eject_index != CB_ERR )
+	{
+		m_wndDevices.SetCurSel( to_eject_index );
+	}
+	else if ( removable_index != CB_ERR )
+	{
+		m_wndDevices.SetCurSel( removable_index );
+	}
 
 	OnCbnSelchangeDisk();
-
-	UpdateWindow();
 
 	// Auto-eject first device
 	PostMessage( WM_PROCESS, AutoEject );
@@ -147,20 +185,19 @@ void CSageEjectDlg::Eject(size_t index)
 	ASSERT( index < m_Devices.size() );
 	auto device = m_Devices.at( index );
 
-	m_EjectTask.erase( index );
-
 	const int count = m_wndDevices.GetCount();
 	for ( int i = 0; i < count; ++i )
 	{
 		if  ( m_wndDevices.GetItemData( i ) == index )
 		{
 			m_wndDevices.SetCurSel( i );
+
 			OnCbnSelchangeDisk();
 			break;
 		}
 	}
 
-	if ( ! device->IsEjectable() )
+	if ( device->LogicalType() != DRIVE_REMOVABLE && device->LogicalType() != DRIVE_CDROM )
 	{
 		// Impossible
 		return;
@@ -196,69 +233,6 @@ void CSageEjectDlg::Eject(size_t index)
 			}
 		}
 
-		// Services to stop
-		static const LPCTSTR services[] =
-		{
-			// Windows Search (disabling access to X:\System Volume Information\IndexerVolumeGuid)
-			_T("WSearch"),
-			// Virtual Disk Service (VDS)
-			//_T("vds"),
-			// Windows SuperFetch (includes modern ReadyBoost)
-			//_T("SysMain"),
-			// Windows Vista ReadyBoost
-			//_T("EMDMgmt")
-		};
-		if ( SC_HANDLE hSCM = OpenSCManager( nullptr, nullptr, SC_MANAGER_ALL_ACCESS ) )
-		{
-			for ( auto service : services )
-			{
-				if ( SC_HANDLE hService = OpenService( hSCM, service, SERVICE_ALL_ACCESS ) )
-				{
-					SERVICE_STATUS ss = {};
-					if ( ControlService( hService, SERVICE_CONTROL_STOP, &ss ) )
-					{
-						for ( const DWORD dwStartTime = GetTickCount(); ! m_Cancel; )
-						{
-							SERVICE_STATUS_PROCESS ssp = {};
-							DWORD dwBytesNeeded = 0;
-							if ( ! QueryServiceStatusEx( hService, SC_STATUS_PROCESS_INFO, (LPBYTE)&ssp, sizeof( SERVICE_STATUS_PROCESS ), &dwBytesNeeded ) )
-							{
-								TRACE( _T("QueryServiceStatusEx(\"%s\") error: %u\n"), service, GetLastError() );
-								break;
-							}
-							if ( ssp.dwCurrentState != SERVICE_STOP_PENDING )
-							{
-								// Already stopped
-								break;
-							}
-							TRACE( _T("Stopping service: %s ...\n"), service );
-							const DWORD dwWaitTime = min( 10000, max( 1000, ssp.dwWaitHint / 10 ) );
-							Sleep( dwWaitTime );
-							if ( GetTickCount() > dwStartTime + 20000 )
-							{
-								TRACE( _T("ControlService(\"%s\") error: Time-out\n"), service );
-								break;
-							}
-						}
-					}
-					else
-					{
-						TRACE( _T("ControlService(\"%s\") error: %u\n"), service, GetLastError() );
-					}
-					CloseServiceHandle( hService );
-				}
-				else
-				{
-					TRACE( _T("OpenService(\"%s\") error: %u\n"), service, GetLastError() );
-				}
-			}
-			CloseServiceHandle( hSCM );
-		}
-		else
-		{
-			TRACE( _T("OpenSCManager() error: %u\n"), GetLastError() );
-		}
-
 		for ( size_t i = 0; ! m_Cancel; ++i )
 		{
 			PostMessage( WM_PROCESS, Ejecting, i );
@@ -273,6 +247,9 @@ void CSageEjectDlg::Eject(size_t index)
 
 			PostMessage( WM_PROCESS, Flushing, i );
 
+			// Trying to stop "curious" services
+			StopServices();
+
 			// Trying to flush device
 			device->Flush();
 
@@ -283,6 +260,72 @@ void CSageEjectDlg::Eject(size_t index)
 
 		CoUninitialize();
 	} );
+}
+
+void CSageEjectDlg::StopServices()
+{
+	// Services to stop
+	static const LPCTSTR services[] =
+	{
+		// Windows Search (disabling access to X:\System Volume Information\IndexerVolumeGuid)
+		_T("WSearch"),
+		// Virtual Disk Service (VDS)
+		//_T("vds"),
+		// Windows SuperFetch (includes modern ReadyBoost)
+		//_T("SysMain"),
+		// Windows Vista ReadyBoost
+		//_T("EMDMgmt")
+	};
+	if ( SC_HANDLE hSCM = OpenSCManager( nullptr, nullptr, SC_MANAGER_CONNECT | GENERIC_EXECUTE ) )
+	{
+		for ( auto service : services )
+		{
+			if ( SC_HANDLE hService = OpenService( hSCM, service, SERVICE_STOP | SERVICE_QUERY_STATUS ) )
+			{
+				SERVICE_STATUS ss = {};
+				if ( ControlService( hService, SERVICE_CONTROL_STOP, &ss ) )
+				{
+					for ( const DWORD dwStartTime = GetTickCount(); ! m_Cancel; )
+					{
+						SERVICE_STATUS_PROCESS ssp = {};
+						DWORD dwBytesNeeded = 0;
+						if ( ! QueryServiceStatusEx( hService, SC_STATUS_PROCESS_INFO, (LPBYTE)&ssp, sizeof( SERVICE_STATUS_PROCESS ), &dwBytesNeeded ) )
+						{
+							TRACE( _T("QueryServiceStatusEx(\"%s\") error: %u\n"), service, GetLastError() );
+							break;
+						}
+						if ( ssp.dwCurrentState != SERVICE_STOP_PENDING )
+						{
+							// Already stopped
+							break;
+						}
+						TRACE( _T("Stopping service: %s ...\n"), service );
+						const DWORD dwWaitTime = min( 10000, max( 1000, ssp.dwWaitHint / 10 ) );
+						Sleep( dwWaitTime );
+						if ( GetTickCount() > dwStartTime + 20000 )
+						{
+							TRACE( _T("ControlService(\"%s\") error: Time-out\n"), service );
+							break;
+						}
+					}
+				}
+				else if ( GetLastError() != ERROR_SERVICE_NOT_ACTIVE )
+				{
+					TRACE( _T("ControlService(\"%s\") error: %u\n"), service, GetLastError() );
+				}
+				CloseServiceHandle( hService );
+			}
+			else
+			{
+				TRACE( _T("OpenService(\"%s\") error: %u\n"), service, GetLastError() );
+			}
+		}
+		CloseServiceHandle( hSCM );
+	}
+	else
+	{
+		TRACE( _T("OpenSCManager() error: %u\n"), GetLastError() );
+	}
 }
 
 BEGIN_MESSAGE_MAP(CSageEjectDlg, CDialogExSized)
@@ -363,6 +406,8 @@ void CSageEjectDlg::OnOK()
 	const int index = m_wndDevices.GetCurSel();
 	if ( index != CB_ERR )
 	{
+		m_EjectTask.clear();
+
 		Eject( m_wndDevices.GetItemData( index ) );
 	}
 }
@@ -418,13 +463,14 @@ LRESULT CSageEjectDlg::OnProcess(WPARAM /* ProcessType */ type, LPARAM number)
 	{
 	case AutoEject:
 	case Done:
-		// Auto-eject device
+		// Auto-eject first device from queue
 		if ( ! m_EjectTask.empty() )
 		{
-			Eject( *m_EjectTask.begin() );
-		}
+			Eject( m_EjectTask.front() );
 
-		if ( type == Done )
+			m_EjectTask.pop_front();
+		}
+		else if ( type == Done || theApp.CommandLine.Auto )
 		{
 			// All disks ejected
 			CDialogExSized::OnOK();
@@ -454,15 +500,15 @@ BOOL CSageEjectDlg::OnDeviceChange(UINT /*nEventType*/, DWORD_PTR /*dwData*/)
 				if ( ( m_nDrives & nMask ) == 0 )
 				{
 					TRACE( _T("Mounted disk: %c\n"), i );
-
-					if ( ! m_Ejecting.joinable() )
-					{
-						Enumerate();
-					}
 				}
 				else
 				{
 					TRACE( _T("Unmounted disk: %c\n"), i );
+				}
+
+				if ( ! m_Ejecting.joinable() )
+				{
+					Enumerate();
 				}
 			}
 		}
@@ -487,7 +533,7 @@ void CSageEjectDlg::OnDropFiles(HDROP hDropInfo)
 
 			if ( _istalpha( file.GetAt( 0 ) ) && file.GetAt( 1 ) == _T(':') )
 			{
-				to_eject.emplace( file.GetAt( 0 ) );
+				to_eject.emplace( file.Left( 2 ) );
 			}
 		}
 	}
@@ -510,8 +556,6 @@ void CSageEjectDlg::OnCbnSelchangeDisk()
 
 		TRACE( _T("Selected: %s\n"), device->LogicalName().c_str() );
 
-		const bool removable = device->IsEjectable();
-
 		m_sVolumeName = device->VolumeName().c_str();
 		m_sID = device->HardwareID().c_str();
 		m_sDOS = device->LogicalDosName().c_str();
@@ -526,13 +570,15 @@ void CSageEjectDlg::OnCbnSelchangeDisk()
 
 		UpdateData( FALSE );
 
-		m_wndEject.EnableWindow( removable ? TRUE : FALSE );
+		m_wndEject.EnableWindow( device->LogicalType() == DRIVE_REMOVABLE || device->LogicalType() == DRIVE_CDROM );
 	}
 	else
 	{
 		// Nothing
 		m_wndEject.EnableWindow( FALSE );
 	}
+
+	UpdateWindow();
 }
 
 void CSageEjectDlg::OnDestroy()

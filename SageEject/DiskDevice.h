@@ -39,8 +39,8 @@ public:
 		HANDLE drive = CreateFile( Path().c_str(), 0, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr );
 		if ( drive != INVALID_HANDLE_VALUE )
 		{
-			DeviceIoControl( drive, IOCTL_STORAGE_GET_DEVICE_NUMBER, nullptr, 0, &m_Number, sizeof( m_Number ), nullptr, nullptr );
-
+			DWORD returned = 0;
+			DeviceIoControl( drive, IOCTL_STORAGE_GET_DEVICE_NUMBER, nullptr, 0, &m_Number, sizeof( m_Number ), &returned, nullptr );
 			CloseHandle( drive );
 		}
 	}

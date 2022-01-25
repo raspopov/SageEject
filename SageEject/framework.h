@@ -60,7 +60,10 @@ along with this program.If not, see < http://www.gnu.org/licenses/>.
 #include <vector>
 #include <map>
 #include <set>
+#include <list>
 #include <thread>
+#include <functional>
+#include <algorithm>
 
 #ifdef _UNICODE
 #if defined _M_IX86
