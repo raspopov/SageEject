@@ -55,6 +55,7 @@ void CSageEjectDlg::DoDataExchange(CDataExchange* pDX)
 	DDX_Text(pDX, IDC_DISK, m_sDisk);
 	DDX_Text(pDX, IDC_NAME, m_sName);
 	DDX_Control(pDX, IDOK, m_wndEject);
+	DDX_Control(pDX, IDC_OPEN, m_wndOpen);
 }
 
 struct device_sorter : std::binary_function< VolumeDeviceClass::Ptr, VolumeDeviceClass::Ptr, bool >
@@ -336,6 +337,7 @@ BEGIN_MESSAGE_MAP(CSageEjectDlg, CDialogExSized)
 	ON_MESSAGE(WM_PROCESS,&CSageEjectDlg::OnProcess)
 	ON_WM_DEVICECHANGE()
 	ON_WM_DROPFILES()
+	ON_BN_CLICKED(IDC_OPEN, &CSageEjectDlg::OnBnClickedOpen)
 END_MESSAGE_MAP()
 
 // CSageEjectDlg message handlers
@@ -344,10 +346,13 @@ BOOL CSageEjectDlg::OnInitDialog()
 {
 	CDialogExSized::OnInitDialog();
 
+	EnableToolTips();
 	DragAcceptFiles();
 
 	SetIcon( m_hIcon, TRUE );	// Set big icon
 	SetIcon( m_hIcon, FALSE );	// Set small icon
+
+	m_wndOpen.SetImage( (HICON)LoadImage( AfxGetResourceHandle(), MAKEINTRESOURCE( IDI_OPEN ), IMAGE_ICON, 16, 16, LR_SHARED ) );
 
 	SetWindowText( AfxGetAppName() );
 
@@ -571,11 +576,13 @@ void CSageEjectDlg::OnCbnSelchangeDisk()
 		UpdateData( FALSE );
 
 		m_wndEject.EnableWindow( device->LogicalType() == DRIVE_REMOVABLE || device->LogicalType() == DRIVE_CDROM );
+		m_wndOpen.EnableWindow( ! device->LogicalName().empty() );
 	}
 	else
 	{
 		// Nothing
 		m_wndEject.EnableWindow( FALSE );
+		m_wndOpen.EnableWindow( FALSE );
 	}
 
 	UpdateWindow();
@@ -609,5 +616,19 @@ void CSageEjectDlg::OnCancel()
 	else
 	{
 		CDialogExSized::OnCancel();
+	}
+}
+
+void CSageEjectDlg::OnBnClickedOpen()
+{
+	const int index = m_wndDevices.GetCurSel();
+	if ( index != CB_ERR )
+	{
+		auto device = m_Devices.at( m_wndDevices.GetItemData( index ) );
+
+		if ( ! device->LogicalName().empty() )
+		{
+			ShellExecute( GetSafeHwnd(), _T("open"), device->LogicalName().c_str(), nullptr, nullptr, SW_SHOWNORMAL );
+		}
 	}
 }

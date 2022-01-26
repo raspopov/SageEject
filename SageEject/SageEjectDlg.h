@@ -39,6 +39,7 @@ public:
 protected:
 	HICON			m_hIcon;
 	CComboBox		m_wndDevices;
+	CMFCButton		m_wndOpen;
 	CButton			m_wndEject;
 	CProgressCtrl	m_wndProgress;
 	CString			m_sVolumeName;
@@ -72,6 +73,7 @@ protected:
 	afx_msg LRESULT OnProcess(WPARAM /* ProcessType */ type, LPARAM number);
 	afx_msg BOOL OnDeviceChange(UINT nEventType, DWORD_PTR dwData);
 	afx_msg void OnDropFiles(HDROP hDropInfo);
+	afx_msg void OnBnClickedOpen();
 
 	DECLARE_MESSAGE_MAP()
 };

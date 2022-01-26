@@ -79,5 +79,8 @@
     <Image Include="res\SageEject.ico">
       <Filter>Resource Files</Filter>
     </Image>
+    <Image Include="res\open.ico">
+      <Filter>Resource Files</Filter>
+    </Image>
   </ItemGroup>
 </Project>

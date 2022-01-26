@@ -225,6 +225,7 @@
     <None Include="res\SageEject.rc2" />
   </ItemGroup>
   <ItemGroup>
+    <Image Include="res\open.ico" />
     <Image Include="res\SageEject.ico" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
