@@ -19,6 +19,6 @@ You should have received a copy of the GNU General Public License
 along with this program.If not, see < http://www.gnu.org/licenses/>.
 */
 
-#include "pch.h"
+#include "stdafx.h"
 
 // When you are using pre-compiled headers, this source file is necessary for compilation to succeed.
