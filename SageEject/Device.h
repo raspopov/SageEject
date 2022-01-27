@@ -56,6 +56,15 @@ public:
 		}
 
 		TRACE( _T("CM_Request_Device_Eject error: 0x%x Veto: %s\n"), res, veto_name );
+
+		//veto_name[ 0 ] = 0;
+		//res = CM_Query_And_Remove_SubTree( Instance(), &veto, veto_name, _countof( veto_name ), CM_REMOVE_UI_NOT_OK );
+		//if ( res == CR_SUCCESS )
+		//{
+		//	return true;
+		//}
+		//TRACE( _T("CM_Query_And_Remove_SubTree error: 0x%x Veto: %s\n"), res, veto_name );
+
 		return false;
 	}
 

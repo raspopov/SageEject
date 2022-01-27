@@ -120,6 +120,12 @@ bool CSageEjectDlg::Enumerate(const CDiskSet& to_eject)
 			name += device->LogicalFS().c_str();
 			name += L"]";
 		}
+
+		WCHAR size[ 50 ] = {};
+		StrFormatByteSize64( device->Length(), size, _countof( size ) );
+		name += L" ";
+		name += size;
+
 		if ( device->DeviceNumber() != (UINT)-1 && device->PartitionNumber() != (UINT)-1 )
 		{
 			name.AppendFormat( IDS_DEVICE_NUMBER, device->DeviceNumber(), device->PartitionNumber() );
@@ -232,6 +238,10 @@ void CSageEjectDlg::Eject(size_t index)
 			{
 				TRACE( _T("EnablePrivilege(SE_LOAD_DRIVER_NAME) error: %d\n"), GetLastError() );
 			}
+		}
+		else
+		{
+			TRACE( _T("GetProcessToken() error: %d\n"), GetLastError() );
 		}
 
 		for ( size_t i = 0; ! m_Cancel; ++i )

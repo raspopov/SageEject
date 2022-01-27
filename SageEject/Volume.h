@@ -27,12 +27,14 @@ class Volume : public DiskDevice
 public:
 	Volume() noexcept
 		: m_LogicalType ( DRIVE_UNKNOWN )
+		, m_Length		()
 	{
 	}
 
 	Volume(IDeviceClassPtr device_class, const SP_DEVINFO_DATA& info, const std::wstring& path)
 		: DiskDevice	( device_class, info, path )
 		, m_LogicalType	( DRIVE_UNKNOWN )
+		, m_Length		()
 	{
 		// Retrieve volume name
 		WCHAR name[ MAX_PATH ] = {};
@@ -45,6 +47,11 @@ public:
 			{
 				m_LogicalTitle = v_title;
 				m_LogicalFS = v_fs;
+			}
+
+			if ( ! GetDiskFreeSpaceEx( name, nullptr, &m_Length, nullptr ) )
+			{
+				TRACE( _T("GetDiskFreeSpaceEx(%s) error: %d\n"), name, GetLastError() );
 			}
 
 			WCHAR dos_name[ MAX_PATH ] = {};
@@ -71,6 +78,11 @@ public:
 				}
 			}
 		}
+	}
+
+	inline ULONGLONG Length() const noexcept
+	{
+		return m_Length.QuadPart;
 	}
 
 	inline const std::wstring& VolumeName() const noexcept
@@ -137,6 +149,8 @@ public:
 			nullptr, OPEN_EXISTING, FILE_FLAG_NO_BUFFERING, nullptr );
 		if ( drive == INVALID_HANDLE_VALUE )
 		{
+			TRACE( _T("Failed to get write access: %d\n"), GetLastError() );
+
 			// Read access second (no buffering!)
 			drive = CreateFile( full_name.c_str(), GENERIC_READ | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE,
 				nullptr, OPEN_EXISTING, FILE_FLAG_NO_BUFFERING, nullptr );
@@ -227,6 +241,7 @@ private:
 	std::wstring	m_LogicalFS;
 	std::wstring	m_LogicalTitle;
 	std::wstring	m_LogicalDosName;
+	ULARGE_INTEGER	m_Length;
 };
 
 
